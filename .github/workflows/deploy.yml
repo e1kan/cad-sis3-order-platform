@@ -1,5 +1,9 @@
 name: deploy
 
+# Continuous deployment to ONE environment ("production" = the SIS 3 stack).
+# Every push to main: lint + unit tests -> build image tagged with the commit SHA
+# -> push to ECR -> update the CloudFormation stack with that tag -> smoke test.
+# No AWS access keys anywhere: the deploy job gets temporary credentials through OIDC.
 on:
   push:
     branches: [main]
@@ -17,7 +21,7 @@ jobs:
   test:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: read              # no AWS access at all in this job
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -31,17 +35,17 @@ jobs:
         run: python -m unittest discover -s app -v
 
   deploy:
-    needs: test
+    needs: test                   # a failing test means this job never starts
     runs-on: ubuntu-latest
-    environment: production
+    environment: production       # the OIDC subject ends with :environment:production
     permissions:
-      id-token: write
+      id-token: write             # required to request the OIDC token
       contents: read
     steps:
       - uses: actions/checkout@v4
 
       - name: Get temporary AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v6
+        uses: aws-actions/configure-aws-credentials@v6   # pin to a commit SHA in real projects
         with:
           role-to-assume: ${{ vars.DEPLOY_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
@@ -53,44 +57,20 @@ jobs:
           echo "REPO_URI=$(q RepositoryUri)"   >> "$GITHUB_ENV"
           echo "REPO_NAME=$(q RepositoryName)" >> "$GITHUB_ENV"
 
-      - name: Log in to Amazon ECR
+      - name: Build and push the image tagged with the commit SHA
         run: |
-          if [ -z "$REPO_URI" ]; then
-            echo "Внимание: REPO_URI пустой (стек еще не создан). Пропускаем логин."
-            exit 0
+          TAG="$GITHUB_SHA"
+          if aws ecr describe-images --repository-name "$REPO_NAME" \
+               --image-ids imageTag="$TAG" >/dev/null 2>&1; then
+            echo "Image $TAG already exists (tags are immutable) - skipping the push"
+          else
+            aws ecr get-login-password | docker login --username AWS --password-stdin "${REPO_URI%%/*}"
+            docker build --platform linux/amd64 -t "$REPO_URI:$TAG" app/
+            docker push "$REPO_URI:$TAG"
           fi
-          aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin "${REPO_URI%%/*}"
-
-      - name: Build and push the image (via Buildx)
-        if: env.REPO_URI != ''
-        uses: docker/build-push-action@v6
-        with:
-          context: ./app
-          file: ./app/Dockerfile
-          push: true
-          tags: ${{ env.REPO_URI }}:${{ github.sha }}
-          platforms: linux/amd64
 
       - name: Deploy the stack with the new image tag
         run: |
-          aws cloudformation deploy --stack-name "$STACK_NAME" \
-            --template-file infra/app.yaml \
-            --parameter-overrides NetworkStackName="$NETWORK_STACK" ImageTag="$GITHUB_SHA" DesiredCount=2 \
-            --capabilities CAPABILITY_IAM --no-fail-on-empty-changeset
-
-      # Если стек создавался с нуля, образа в ECR еще нет. Собираем и пушим его после создания стека.
-      - name: Push image if stack was just created
-        if: env.REPO_URI == ''
-        run: |
-          q() { aws cloudformation describe-stacks --stack-name "$STACK_NAME" \
-                  --query "Stacks[0].Outputs[?OutputKey=='$1'].OutputValue" --output text; }
-          export REPO_URI=$(q RepositoryUri)
-          export REPO_NAME=$(q RepositoryName)
-          aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin "${REPO_URI%%/*}"
-          docker build --platform linux/amd64 -t "$REPO_URI:$GITHUB_SHA" app/
-          docker push "$REPO_URI:$GITHUB_SHA"
-          
-          # Обновляем стек с новым образом
           aws cloudformation deploy --stack-name "$STACK_NAME" \
             --template-file infra/app.yaml \
             --parameter-overrides NetworkStackName="$NETWORK_STACK" ImageTag="$GITHUB_SHA" DesiredCount=2 \
