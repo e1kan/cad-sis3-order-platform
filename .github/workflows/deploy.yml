@@ -1,9 +1,5 @@
 name: deploy
 
-# Continuous deployment to ONE environment ("production" = the SIS 3 stack).
-# Every push to main: lint + unit tests -> build image tagged with the commit SHA
-# -> push to ECR -> update the CloudFormation stack with that tag -> smoke test.
-# No AWS access keys anywhere: the deploy job gets temporary credentials through OIDC.
 on:
   push:
     branches: [main]
@@ -21,7 +17,7 @@ jobs:
   test:
     runs-on: ubuntu-latest
     permissions:
-      contents: read              # no AWS access at all in this job
+      contents: read
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -35,19 +31,23 @@ jobs:
         run: python -m unittest discover -s app -v
 
   deploy:
-    needs: test                   # a failing test means this job never starts
+    needs: test
     runs-on: ubuntu-latest
-    environment: production       # the OIDC subject ends with :environment:production
+    environment: production
     permissions:
-      id-token: write             # required to request the OIDC token
+      id-token: write
       contents: read
     steps:
       - uses: actions/checkout@v4
 
-      - name: Clean Docker cache
+      - name: Nuke Docker config and environment
         run: |
+          sudo rm -rf /etc/docker/daemon.json || true
           rm -rf ~/.docker/config.json || true
+          unset DOCKER_AUTH_CONFIG
+          unset DOCKER_CONFIG
           docker system prune -af || true
+          echo "Docker config cleared"
 
       - name: Get temporary AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v6
@@ -65,7 +65,6 @@ jobs:
       - name: Build and push the image tagged with the commit SHA
         run: |
           TAG="$GITHUB_SHA"
-          # Принудительно вычищаем все следы Docker Hub
           unset DOCKER_AUTH_CONFIG
           rm -rf ~/.docker/config.json
           docker logout public.ecr.aws || true
