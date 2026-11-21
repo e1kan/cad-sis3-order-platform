@@ -65,6 +65,12 @@ jobs:
       - name: Build and push the image tagged with the commit SHA
         run: |
           TAG="$GITHUB_SHA"
+          # Принудительно вычищаем все следы Docker Hub
+          unset DOCKER_AUTH_CONFIG
+          rm -rf ~/.docker/config.json
+          docker logout public.ecr.aws || true
+          docker logout docker.io || true
+          
           if aws ecr describe-images --repository-name "$REPO_NAME" \
                --image-ids imageTag="$TAG" >/dev/null 2>&1; then
             echo "Image $TAG already exists (tags are immutable) - skipping the push"
