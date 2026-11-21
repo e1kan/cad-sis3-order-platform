@@ -75,23 +75,6 @@ jobs:
           echo "REPO_URI=$(q RepositoryUri)"   >> "$GITHUB_ENV"
           echo "REPO_NAME=$(q RepositoryName)" >> "$GITHUB_ENV"
 
-      - name: Build and push the image tagged with the commit SHA
-        run: |
-          TAG="$GITHUB_SHA"
-          unset DOCKER_AUTH_CONFIG
-          rm -rf ~/.docker/config.json
-          docker logout public.ecr.aws || true
-          docker logout docker.io || true
-          
-          if aws ecr describe-images --repository-name "$REPO_NAME" \
-               --image-ids imageTag="$TAG" >/dev/null 2>&1; then
-            echo "Image $TAG already exists (tags are immutable) - skipping the push"
-          else
-            aws ecr get-login-password | docker login --username AWS --password-stdin "${REPO_URI%%/*}"
-            docker build --platform linux/amd64 -t "$REPO_URI:$TAG" app/
-            docker push "$REPO_URI:$TAG"
-          fi
-
       - name: Deploy the stack with the new image tag
         run: |
           aws cloudformation deploy --stack-name "$STACK_NAME" \
