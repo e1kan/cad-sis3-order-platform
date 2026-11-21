@@ -46,8 +46,8 @@ jobs:
 
       - name: Clean Docker cache
         run: |
-          docker logout || true
-          docker system prune -af
+          rm -rf ~/.docker/config.json || true
+          docker system prune -af || true
 
       - name: Get temporary AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v6
