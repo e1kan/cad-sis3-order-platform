@@ -1,8 +1,3 @@
-      - name: Clean Docker cache
-        run: |
-          docker logout || true
-          docker system prune -af
-
 name: deploy
 
 # Continuous deployment to ONE environment ("production" = the SIS 3 stack).
@@ -49,8 +44,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Clean Docker cache
+        run: |
+          docker logout || true
+          docker system prune -af
+
       - name: Get temporary AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v6   # pin to a commit SHA in real projects
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ vars.DEPLOY_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
