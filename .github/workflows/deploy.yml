@@ -1,0 +1,91 @@
+name: deploy
+
+# Continuous deployment to ONE environment ("production" = the SIS 3 stack).
+# Every push to main: lint + unit tests -> build image tagged with the commit SHA
+# -> push to ECR -> update the CloudFormation stack with that tag -> smoke test.
+# No AWS access keys anywhere: the deploy job gets temporary credentials through OIDC.
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: eu-central-1
+  STACK_NAME: cad-sis3-app
+  NETWORK_STACK: cad-sis3-network
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read              # no AWS access at all in this job
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install tools
+        run: pip install cfn-lint -r app/requirements.txt
+      - name: Lint the CloudFormation templates
+        run: cfn-lint infra/network.yaml infra/app.yaml
+      - name: Unit tests
+        run: python -m unittest discover -s app -v
+
+  deploy:
+    needs: test                   # a failing test means this job never starts
+    runs-on: ubuntu-latest
+    environment: production       # the OIDC subject ends with :environment:production
+    permissions:
+      id-token: write             # required to request the OIDC token
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get temporary AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v6   # pin to a commit SHA in real projects
+        with:
+          role-to-assume: ${{ vars.DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Find the ECR repository of the stack
+        run: |
+          q() { aws cloudformation describe-stacks --stack-name "$STACK_NAME" \
+                  --query "Stacks[0].Outputs[?OutputKey=='$1'].OutputValue" --output text; }
+          echo "REPO_URI=$(q RepositoryUri)"   >> "$GITHUB_ENV"
+          echo "REPO_NAME=$(q RepositoryName)" >> "$GITHUB_ENV"
+
+      - name: Build and push the image tagged with the commit SHA
+        run: |
+          TAG="$GITHUB_SHA"
+          if aws ecr describe-images --repository-name "$REPO_NAME" \
+               --image-ids imageTag="$TAG" >/dev/null 2>&1; then
+            echo "Image $TAG already exists (tags are immutable) - skipping the push"
+          else
+            aws ecr get-login-password | docker login --username AWS --password-stdin "${REPO_URI%%/*}"
+            docker build --platform linux/amd64 -t "$REPO_URI:$TAG" app/
+            docker push "$REPO_URI:$TAG"
+          fi
+
+      - name: Deploy the stack with the new image tag
+        run: |
+          aws cloudformation deploy --stack-name "$STACK_NAME" \
+            --template-file infra/app.yaml \
+            --parameter-overrides NetworkStackName="$NETWORK_STACK" ImageTag="$GITHUB_SHA" DesiredCount=2 \
+            --capabilities CAPABILITY_IAM --no-fail-on-empty-changeset
+
+      - name: Smoke test through the load balancer
+        run: |
+          ALB=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" \
+                  --query "Stacks[0].Outputs[?OutputKey=='AlbDnsName'].OutputValue" --output text)
+          curl --fail --silent --show-error --retry 10 --retry-delay 6 --retry-all-errors "http://$ALB/health"
+
+      - name: Show the new task definition revision
+        run: |
+          {
+            echo "### Deployed commit \`$GITHUB_SHA\`"
+            aws ecs describe-task-definition --task-definition "$STACK_NAME-api" \
+              --query 'taskDefinition.[family,revision,containerDefinitions[0].image]' --output text
+          } | tee -a "$GITHUB_STEP_SUMMARY"
