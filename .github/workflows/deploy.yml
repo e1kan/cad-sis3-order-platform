@@ -1,3 +1,8 @@
+      - name: Clean Docker cache
+        run: |
+          docker logout || true
+          docker system prune -af
+
 name: deploy
 
 # Continuous deployment to ONE environment ("production" = the SIS 3 stack).
