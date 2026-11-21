@@ -36,7 +36,7 @@ class ApiTests(unittest.TestCase):
     def test_health_returns_ok(self):
         status, body = self.call("/health")
         self.assertEqual(status, 200)
-        self.assertEqual(body, {"status": "broken"})
+        self.assertEqual(body, {"status": "ok"})
 
     def test_valid_order_publishes_one_event(self):
         with mock.patch.object(app.sns, "publish") as publish:
