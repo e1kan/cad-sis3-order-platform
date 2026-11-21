@@ -40,6 +40,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Log in to Amazon ECR
+        run: |
+          aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin "${REPO_URI%%/*}"
+
+      - name: Build and push the image (via Buildx)
+        uses: docker/build-push-action@v6
+        with:
+          context: ./app
+          file: ./app/Dockerfile
+          push: true
+          tags: ${{ env.REPO_URI }}:${{ github.sha }}
+          platforms: linux/amd64
+
       - name: Nuke Docker config and environment
         run: |
           sudo rm -rf /etc/docker/daemon.json || true
