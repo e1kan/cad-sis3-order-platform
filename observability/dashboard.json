@@ -1,0 +1,379 @@
+{
+    "widgets": [
+        {
+            "type": "alarm",
+            "x": 0,
+            "y": 0,
+            "width": 24,
+            "height": 3,
+            "properties": {
+                "title": "Alarm status",
+                "alarms": [
+                    "arn:aws:cloudwatch:eu-central-1:983902695513:alarm:cad-sis3-app-OrdersDlqAlarm-ZtytLjD8Vh3X",
+                    "arn:aws:cloudwatch:eu-central-1:983902695513:alarm:cad-sis3-app-SnsDeliveryDlqAlarm-XB43wse1kIyv"
+                ]
+            }
+        },
+        {
+            "type": "metric",
+            "x": 0,
+            "y": 3,
+            "width": 8,
+            "height": 6,
+            "properties": {
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "eu-central-1",
+                "title": "Traffic: requests per minute",
+                "metrics": [
+                    [
+                        "AWS/ApplicationELB",
+                        "RequestCount",
+                        "LoadBalancer",
+                        "app/cad-si-LoadB-LPSYbC7W2HyI/aa32846d12c220f1",
+                        {
+                            "label": "ALB requests"
+                        }
+                    ],
+                    [
+                        "AWS/Lambda",
+                        "Invocations",
+                        "FunctionName",
+                        "cad-sis3-app-ConsumerFunction-zkSH7OVdgY4U",
+                        {
+                            "label": "Consumer invocations"
+                        }
+                    ]
+                ],
+                "stat": "Sum",
+                "period": 60
+            }
+        },
+        {
+            "type": "metric",
+            "x": 8,
+            "y": 3,
+            "width": 8,
+            "height": 6,
+            "properties": {
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "eu-central-1",
+                "title": "Errors: count",
+                "metrics": [
+                    [
+                        "AWS/ApplicationELB",
+                        "HTTPCode_Target_5XX_Count",
+                        "LoadBalancer",
+                        "app/cad-si-LoadB-LPSYbC7W2HyI/aa32846d12c220f1",
+                        {
+                            "label": "ALB 5xx"
+                        }
+                    ],
+                    [
+                        "AWS/Lambda",
+                        "Errors",
+                        "FunctionName",
+                        "cad-sis3-app-ConsumerFunction-zkSH7OVdgY4U",
+                        {
+                            "label": "Lambda errors"
+                        }
+                    ],
+                    [
+                        "CourseProject/Orders",
+                        "OrdersFailed",
+                        "Stage",
+                        "dev",
+                        {
+                            "label": "Orders failed"
+                        }
+                    ]
+                ],
+                "stat": "Sum",
+                "period": 60
+            }
+        },
+        {
+            "type": "metric",
+            "x": 16,
+            "y": 3,
+            "width": 8,
+            "height": 6,
+            "properties": {
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "eu-central-1",
+                "title": "Errors: ALB 5xx rate (%)",
+                "metrics": [
+                    [
+                        {
+                            "expression": "100*m2/m1",
+                            "label": "5xx rate %",
+                            "id": "e1"
+                        }
+                    ],
+                    [
+                        "AWS/ApplicationELB",
+                        "RequestCount",
+                        "LoadBalancer",
+                        "app/cad-si-LoadB-LPSYbC7W2HyI/aa32846d12c220f1",
+                        {
+                            "id": "m1",
+                            "visible": false
+                        }
+                    ],
+                    [
+                        "AWS/ApplicationELB",
+                        "HTTPCode_Target_5XX_Count",
+                        "LoadBalancer",
+                        "app/cad-si-LoadB-LPSYbC7W2HyI/aa32846d12c220f1",
+                        {
+                            "id": "m2",
+                            "visible": false
+                        }
+                    ]
+                ],
+                "stat": "Sum",
+                "period": 60
+            }
+        },
+        {
+            "type": "metric",
+            "x": 0,
+            "y": 9,
+            "width": 12,
+            "height": 6,
+            "properties": {
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "eu-central-1",
+                "title": "Latency: ALB target response time (s)",
+                "metrics": [
+                    [
+                        "AWS/ApplicationELB",
+                        "TargetResponseTime",
+                        "LoadBalancer",
+                        "app/cad-si-LoadB-LPSYbC7W2HyI/aa32846d12c220f1",
+                        {
+                            "stat": "p50",
+                            "label": "p50"
+                        }
+                    ],
+                    [
+                        "AWS/ApplicationELB",
+                        "TargetResponseTime",
+                        "LoadBalancer",
+                        "app/cad-si-LoadB-LPSYbC7W2HyI/aa32846d12c220f1",
+                        {
+                            "stat": "p95",
+                            "label": "p95"
+                        }
+                    ],
+                    [
+                        "AWS/ApplicationELB",
+                        "TargetResponseTime",
+                        "LoadBalancer",
+                        "app/cad-si-LoadB-LPSYbC7W2HyI/aa32846d12c220f1",
+                        {
+                            "stat": "p99",
+                            "label": "p99"
+                        }
+                    ]
+                ],
+                "stat": "p95",
+                "period": 60
+            }
+        },
+        {
+            "type": "metric",
+            "x": 12,
+            "y": 9,
+            "width": 12,
+            "height": 6,
+            "properties": {
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "eu-central-1",
+                "title": "Latency: consumer duration (ms)",
+                "metrics": [
+                    [
+                        "AWS/Lambda",
+                        "Duration",
+                        "FunctionName",
+                        "cad-sis3-app-ConsumerFunction-zkSH7OVdgY4U",
+                        {
+                            "stat": "p50",
+                            "label": "p50"
+                        }
+                    ],
+                    [
+                        "AWS/Lambda",
+                        "Duration",
+                        "FunctionName",
+                        "cad-sis3-app-ConsumerFunction-zkSH7OVdgY4U",
+                        {
+                            "stat": "p95",
+                            "label": "p95"
+                        }
+                    ],
+                    [
+                        "AWS/Lambda",
+                        "Duration",
+                        "FunctionName",
+                        "cad-sis3-app-ConsumerFunction-zkSH7OVdgY4U",
+                        {
+                            "stat": "p99",
+                            "label": "p99"
+                        }
+                    ]
+                ],
+                "stat": "p95",
+                "period": 60
+            }
+        },
+        {
+            "type": "metric",
+            "x": 0,
+            "y": 15,
+            "width": 8,
+            "height": 6,
+            "properties": {
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "eu-central-1",
+                "title": "Saturation: Lambda concurrency and throttles",
+                "metrics": [
+                    [
+                        "AWS/Lambda",
+                        "ConcurrentExecutions",
+                        "FunctionName",
+                        "cad-sis3-app-ConsumerFunction-zkSH7OVdgY4U",
+                        {
+                            "stat": "Maximum",
+                            "label": "Concurrent executions"
+                        }
+                    ],
+                    [
+                        "AWS/Lambda",
+                        "Throttles",
+                        "FunctionName",
+                        "cad-sis3-app-ConsumerFunction-zkSH7OVdgY4U",
+                        {
+                            "label": "Throttles"
+                        }
+                    ]
+                ],
+                "stat": "Sum",
+                "period": 60
+            }
+        },
+        {
+            "type": "metric",
+            "x": 8,
+            "y": 15,
+            "width": 8,
+            "height": 6,
+            "properties": {
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "eu-central-1",
+                "title": "Saturation: queue backlog and age",
+                "metrics": [
+                    [
+                        "AWS/SQS",
+                        "ApproximateAgeOfOldestMessage",
+                        "QueueName",
+                        "cad-sis3-app-OrdersQueue-NuNomYx6gILr",
+                        {
+                            "stat": "Maximum",
+                            "label": "Oldest message age (s)"
+                        }
+                    ],
+                    [
+                        "AWS/SQS",
+                        "ApproximateNumberOfMessagesVisible",
+                        "QueueName",
+                        "cad-sis3-app-OrdersQueue-NuNomYx6gILr",
+                        {
+                            "stat": "Maximum",
+                            "label": "Messages waiting"
+                        }
+                    ]
+                ],
+                "stat": "Sum",
+                "period": 60
+            }
+        },
+        {
+            "type": "metric",
+            "x": 16,
+            "y": 15,
+            "width": 8,
+            "height": 6,
+            "properties": {
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "eu-central-1",
+                "title": "Saturation: DLQ depth (needs a human)",
+                "metrics": [
+                    [
+                        "AWS/SQS",
+                        "ApproximateNumberOfMessagesVisible",
+                        "QueueName",
+                        "cad-sis3-app-OrdersDLQ-iFbvHk3faUOJ",
+                        {
+                            "stat": "Maximum",
+                            "label": "Orders DLQ"
+                        }
+                    ]
+                ],
+                "stat": "Sum",
+                "period": 60
+            }
+        },
+        {
+            "type": "metric",
+            "x": 0,
+            "y": 21,
+            "width": 24,
+            "height": 6,
+            "properties": {
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "eu-central-1",
+                "title": "Business: orders (custom metrics, EMF)",
+                "metrics": [
+                    [
+                        "CourseProject/Orders",
+                        "OrdersProcessed",
+                        "Stage",
+                        "dev",
+                        {
+                            "label": "Processed"
+                        }
+                    ],
+                    [
+                        "CourseProject/Orders",
+                        "DuplicatesIgnored",
+                        "Stage",
+                        "dev",
+                        {
+                            "label": "Duplicates ignored"
+                        }
+                    ],
+                    [
+                        "CourseProject/Orders",
+                        "OrdersFailed",
+                        "Stage",
+                        "dev",
+                        {
+                            "label": "Failed"
+                        }
+                    ]
+                ],
+                "stat": "Sum",
+                "period": 60
+            }
+        }
+    ]
+}

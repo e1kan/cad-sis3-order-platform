@@ -21,6 +21,14 @@ Parameters:
     Type: Number
     Default: 7
     AllowedValues: [1, 3, 5, 7, 14, 30]
+  AlarmEmail:
+    Type: String
+    Default: ""
+    AllowedPattern: '^$|^[^@\s]+@[^@\s]+\.[^@\s]+$'
+    Description: Email for alarm notifications. Empty = no subscription. AWS sends a confirmation link you must click.
+
+Conditions:
+  HasAlarmEmail: !Not [!Equals [!Ref AlarmEmail, ""]]
 
 Mappings:
   Sizing:
@@ -135,6 +143,19 @@ Resources:
       RedrivePolicy:
         deadLetterTargetArn: !GetAtt SnsDeliveryDLQ.Arn
 
+  # Notifications: an alarm that nobody hears is not an alarm. The email stays
+  # "Pending confirmation" until the link in the AWS email is clicked.
+  AlarmTopic:
+    Type: AWS::SNS::Topic
+
+  AlarmEmailSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: HasAlarmEmail
+    Properties:
+      TopicArn: !Ref AlarmTopic
+      Protocol: email
+      Endpoint: !Ref AlarmEmail
+
   OrdersDlqAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
@@ -149,6 +170,8 @@ Resources:
       Threshold: 1
       ComparisonOperator: GreaterThanOrEqualToThreshold
       TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlarmTopic]
+      OKActions: [!Ref AlarmTopic]
 
   SnsDeliveryDlqAlarm:
     Type: AWS::CloudWatch::Alarm
@@ -164,6 +187,8 @@ Resources:
       Threshold: 1
       ComparisonOperator: GreaterThanOrEqualToThreshold
       TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlarmTopic]
+      OKActions: [!Ref AlarmTopic]
 
   # ------------------------------------------------------------ Data
   # No TableName: CloudFormation generates it, so a later update can never collide on the name.
@@ -184,6 +209,391 @@ Resources:
         AttributeName: expiresAt
         Enabled: true
 
+  Dashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Sub "${AWS::StackName}-overview"
+      DashboardBody: !Sub |
+        {
+         "widgets": [
+          {
+           "type": "alarm",
+           "x": 0,
+           "y": 0,
+           "width": 24,
+           "height": 3,
+           "properties": {
+            "title": "Alarm status",
+            "alarms": [
+             "${OrdersDlqAlarm.Arn}",
+             "${SnsDeliveryDlqAlarm.Arn}"
+            ]
+           }
+          },
+          {
+           "type": "metric",
+           "x": 0,
+           "y": 3,
+           "width": 8,
+           "height": 6,
+           "properties": {
+            "view": "timeSeries",
+            "stacked": false,
+            "region": "${AWS::Region}",
+            "title": "Traffic: requests per minute",
+            "metrics": [
+             [
+              "AWS/ApplicationELB",
+              "RequestCount",
+              "LoadBalancer",
+              "${LoadBalancer.LoadBalancerFullName}",
+              {
+               "label": "ALB requests"
+              }
+             ],
+             [
+              "AWS/Lambda",
+              "Invocations",
+              "FunctionName",
+              "${ConsumerFunction}",
+              {
+               "label": "Consumer invocations"
+              }
+             ]
+            ],
+            "stat": "Sum",
+            "period": 60
+           }
+          },
+          {
+           "type": "metric",
+           "x": 8,
+           "y": 3,
+           "width": 8,
+           "height": 6,
+           "properties": {
+            "view": "timeSeries",
+            "stacked": false,
+            "region": "${AWS::Region}",
+            "title": "Errors: count",
+            "metrics": [
+             [
+              "AWS/ApplicationELB",
+              "HTTPCode_Target_5XX_Count",
+              "LoadBalancer",
+              "${LoadBalancer.LoadBalancerFullName}",
+              {
+               "label": "ALB 5xx"
+              }
+             ],
+             [
+              "AWS/Lambda",
+              "Errors",
+              "FunctionName",
+              "${ConsumerFunction}",
+              {
+               "label": "Lambda errors"
+              }
+             ],
+             [
+              "CourseProject/Orders",
+              "OrdersFailed",
+              "Stage",
+              "${Env}",
+              {
+               "label": "Orders failed"
+              }
+             ]
+            ],
+            "stat": "Sum",
+            "period": 60
+           }
+          },
+          {
+           "type": "metric",
+           "x": 16,
+           "y": 3,
+           "width": 8,
+           "height": 6,
+           "properties": {
+            "view": "timeSeries",
+            "stacked": false,
+            "region": "${AWS::Region}",
+            "title": "Errors: ALB 5xx rate (%)",
+            "metrics": [
+             [
+              {
+               "expression": "100*m2/m1",
+               "label": "5xx rate %",
+               "id": "e1"
+              }
+             ],
+             [
+              "AWS/ApplicationELB",
+              "RequestCount",
+              "LoadBalancer",
+              "${LoadBalancer.LoadBalancerFullName}",
+              {
+               "id": "m1",
+               "visible": false
+              }
+             ],
+             [
+              "AWS/ApplicationELB",
+              "HTTPCode_Target_5XX_Count",
+              "LoadBalancer",
+              "${LoadBalancer.LoadBalancerFullName}",
+              {
+               "id": "m2",
+               "visible": false
+              }
+             ]
+            ],
+            "stat": "Sum",
+            "period": 60
+           }
+          },
+          {
+           "type": "metric",
+           "x": 0,
+           "y": 9,
+           "width": 12,
+           "height": 6,
+           "properties": {
+            "view": "timeSeries",
+            "stacked": false,
+            "region": "${AWS::Region}",
+            "title": "Latency: ALB target response time (s)",
+            "metrics": [
+             [
+              "AWS/ApplicationELB",
+              "TargetResponseTime",
+              "LoadBalancer",
+              "${LoadBalancer.LoadBalancerFullName}",
+              {
+               "stat": "p50",
+               "label": "p50"
+              }
+             ],
+             [
+              "AWS/ApplicationELB",
+              "TargetResponseTime",
+              "LoadBalancer",
+              "${LoadBalancer.LoadBalancerFullName}",
+              {
+               "stat": "p95",
+               "label": "p95"
+              }
+             ],
+             [
+              "AWS/ApplicationELB",
+              "TargetResponseTime",
+              "LoadBalancer",
+              "${LoadBalancer.LoadBalancerFullName}",
+              {
+               "stat": "p99",
+               "label": "p99"
+              }
+             ]
+            ],
+            "stat": "p95",
+            "period": 60
+           }
+          },
+          {
+           "type": "metric",
+           "x": 12,
+           "y": 9,
+           "width": 12,
+           "height": 6,
+           "properties": {
+            "view": "timeSeries",
+            "stacked": false,
+            "region": "${AWS::Region}",
+            "title": "Latency: consumer duration (ms)",
+            "metrics": [
+             [
+              "AWS/Lambda",
+              "Duration",
+              "FunctionName",
+              "${ConsumerFunction}",
+              {
+               "stat": "p50",
+               "label": "p50"
+              }
+             ],
+             [
+              "AWS/Lambda",
+              "Duration",
+              "FunctionName",
+              "${ConsumerFunction}",
+              {
+               "stat": "p95",
+               "label": "p95"
+              }
+             ],
+             [
+              "AWS/Lambda",
+              "Duration",
+              "FunctionName",
+              "${ConsumerFunction}",
+              {
+               "stat": "p99",
+               "label": "p99"
+              }
+             ]
+            ],
+            "stat": "p95",
+            "period": 60
+           }
+          },
+          {
+           "type": "metric",
+           "x": 0,
+           "y": 15,
+           "width": 8,
+           "height": 6,
+           "properties": {
+            "view": "timeSeries",
+            "stacked": false,
+            "region": "${AWS::Region}",
+            "title": "Saturation: Lambda concurrency and throttles",
+            "metrics": [
+             [
+              "AWS/Lambda",
+              "ConcurrentExecutions",
+              "FunctionName",
+              "${ConsumerFunction}",
+              {
+               "stat": "Maximum",
+               "label": "Concurrent executions"
+              }
+             ],
+             [
+              "AWS/Lambda",
+              "Throttles",
+              "FunctionName",
+              "${ConsumerFunction}",
+              {
+               "label": "Throttles"
+              }
+             ]
+            ],
+            "stat": "Sum",
+            "period": 60
+           }
+          },
+          {
+           "type": "metric",
+           "x": 8,
+           "y": 15,
+           "width": 8,
+           "height": 6,
+           "properties": {
+            "view": "timeSeries",
+            "stacked": false,
+            "region": "${AWS::Region}",
+            "title": "Saturation: queue backlog and age",
+            "metrics": [
+             [
+              "AWS/SQS",
+              "ApproximateAgeOfOldestMessage",
+              "QueueName",
+              "${OrdersQueue.QueueName}",
+              {
+               "stat": "Maximum",
+               "label": "Oldest message age (s)"
+              }
+             ],
+             [
+              "AWS/SQS",
+              "ApproximateNumberOfMessagesVisible",
+              "QueueName",
+              "${OrdersQueue.QueueName}",
+              {
+               "stat": "Maximum",
+               "label": "Messages waiting"
+              }
+             ]
+            ],
+            "stat": "Sum",
+            "period": 60
+           }
+          },
+          {
+           "type": "metric",
+           "x": 16,
+           "y": 15,
+           "width": 8,
+           "height": 6,
+           "properties": {
+            "view": "timeSeries",
+            "stacked": false,
+            "region": "${AWS::Region}",
+            "title": "Saturation: DLQ depth (needs a human)",
+            "metrics": [
+             [
+              "AWS/SQS",
+              "ApproximateNumberOfMessagesVisible",
+              "QueueName",
+              "${OrdersDLQ.QueueName}",
+              {
+               "stat": "Maximum",
+               "label": "Orders DLQ"
+              }
+             ]
+            ],
+            "stat": "Sum",
+            "period": 60
+           }
+          },
+          {
+           "type": "metric",
+           "x": 0,
+           "y": 21,
+           "width": 24,
+           "height": 6,
+           "properties": {
+            "view": "timeSeries",
+            "stacked": false,
+            "region": "${AWS::Region}",
+            "title": "Business: orders (custom metrics, EMF)",
+            "metrics": [
+             [
+              "CourseProject/Orders",
+              "OrdersProcessed",
+              "Stage",
+              "${Env}",
+              {
+               "label": "Processed"
+              }
+             ],
+             [
+              "CourseProject/Orders",
+              "DuplicatesIgnored",
+              "Stage",
+              "${Env}",
+              {
+               "label": "Duplicates ignored"
+              }
+             ],
+             [
+              "CourseProject/Orders",
+              "OrdersFailed",
+              "Stage",
+              "${Env}",
+              {
+               "label": "Failed"
+              }
+             ]
+            ],
+            "stat": "Sum",
+            "period": 60
+           }
+          }
+         ]
+        }
+
   # ------------------------------------------------------------ Idempotent consumer (Lambda)
   ConsumerLogGroup:
     Type: AWS::Logs::LogGroup
@@ -202,6 +612,7 @@ Resources:
             Action: sts:AssumeRole
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AWSXrayWriteOnlyAccess
       Policies:
         - PolicyName: consumer-least-privilege
           PolicyDocument:
@@ -225,49 +636,77 @@ Resources:
       Timeout: 10
       MemorySize: 128
       Role: !GetAtt ConsumerRole.Arn
+      TracingConfig:
+        Mode: Active                         # X-Ray: Lambda segments (and our DynamoDB subsegment)
       Environment:
         Variables:
           TABLE_NAME: !Ref OrdersTable
+          STAGE: !Ref Env
       LoggingConfig:
         LogGroup: !Ref ConsumerLogGroup
       Code:
         ZipFile: |
-          import json, logging, os, time
+          import json, os, secrets, socket, time
           import boto3
           from botocore.exceptions import ClientError
 
-          log = logging.getLogger()
-          log.setLevel(logging.INFO)
           ddb = boto3.client("dynamodb")
           TABLE = os.environ["TABLE_NAME"]
-          TTL_SECONDS = 7 * 24 * 3600
+          STAGE = os.environ.get("STAGE", "dev")
+          TTL = 7 * 24 * 3600
+
+
+          def emit(level, message, metric=None, **fields):
+              """One JSON line = structured log; with `metric` it is also an EMF custom metric."""
+              line = {"level": level, "message": message, **fields}
+              if metric:
+                  line["_aws"] = {"Timestamp": int(time.time() * 1000), "CloudWatchMetrics": [{
+                      "Namespace": "CourseProject/Orders", "Dimensions": [["Stage"]],
+                      "Metrics": [{"Name": metric, "Unit": "Count"}]}]}
+                  line["Stage"], line[metric] = STAGE, 1
+              print(json.dumps(line))
+
+
+          def subsegment(op, start):
+              """Send a DynamoDB subsegment to the X-Ray daemon of the Lambda runtime (no SDK needed)."""
+              try:
+                  h = dict(p.split("=", 1) for p in os.environ["_X_AMZN_TRACE_ID"].split(";"))
+                  if h.get("Sampled") != "1":
+                      return
+                  doc = {"id": secrets.token_hex(8), "name": "DynamoDB", "type": "subsegment",
+                         "start_time": start, "end_time": time.time(), "trace_id": h["Root"],
+                         "parent_id": h["Parent"], "namespace": "aws",
+                         "aws": {"operation": op, "table_name": TABLE}}
+                  host, port = os.environ["AWS_XRAY_DAEMON_ADDRESS"].split(":")
+                  with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+                      s.sendto(b'{"format":"json","version":1}\n' + json.dumps(doc).encode(), (host, int(port)))
+              except Exception:
+                  pass  # tracing must never break the order
 
 
           def process(body):
               event = json.loads(body)
               order_id = event["orderId"]  # business key = idempotency (deduplication) key
               now = int(time.time())
+              t0 = time.time()
               try:
                   ddb.transact_write_items(TransactItems=[
                       {"Put": {"TableName": TABLE,
-                               "Item": {"pk": {"S": "IDEMP#" + order_id},
-                                        "expiresAt": {"N": str(now + TTL_SECONDS)}},
+                               "Item": {"pk": {"S": "IDEMP#" + order_id}, "expiresAt": {"N": str(now + TTL)}},
                                "ConditionExpression": "attribute_not_exists(pk)"}},
                       {"Put": {"TableName": TABLE,
-                               "Item": {"pk": {"S": "ORDER#" + order_id},
-                                        "customerId": {"S": event["customerId"]},
-                                        "total": {"N": str(event["total"])},
-                                        "status": {"S": "PROCESSED"},
-                                        "processedAt": {"N": str(now)}}}},
-                  ])
-                  log.info("processed orderId=%s", order_id)
+                               "Item": {"pk": {"S": "ORDER#" + order_id}, "customerId": {"S": event["customerId"]},
+                                        "total": {"N": str(event["total"])}, "status": {"S": "PROCESSED"},
+                                        "processedAt": {"N": str(now)}}}}])
+                  emit("INFO", "order_processed", "OrdersProcessed", orderId=order_id)
               except ClientError as e:
-                  if e.response["Error"]["Code"] == "TransactionCanceledException":
-                      reasons = [r.get("Code") for r in e.response.get("CancellationReasons", [])]
-                      if "ConditionalCheckFailed" in reasons:
-                          log.info("duplicate ignored orderId=%s", order_id)
-                          return
+                  reasons = [r.get("Code") for r in e.response.get("CancellationReasons", [])]
+                  if e.response["Error"]["Code"] == "TransactionCanceledException" and "ConditionalCheckFailed" in reasons:
+                      emit("INFO", "order_duplicate_ignored", "DuplicatesIgnored", orderId=order_id)
+                      return
                   raise
+              finally:
+                  subsegment("TransactWriteItems", t0)
 
 
           def handler(event, context):
@@ -275,8 +714,9 @@ Resources:
               for record in event["Records"]:
                   try:
                       process(record["body"])
-                  except Exception:
-                      log.exception("failed messageId=%s", record["messageId"])
+                  except Exception as e:
+                      emit("ERROR", "order_failed", "OrdersFailed", errorType=type(e).__name__,
+                           messageId=record["messageId"], bodyBytes=len(record["body"]))
                       failed.append({"itemIdentifier": record["messageId"]})
               return {"batchItemFailures": failed}
 
@@ -461,3 +901,11 @@ Outputs:
     Value: !GetAtt Service.Name
   TargetGroupArn:
     Value: !Ref TargetGroup
+  DashboardName:
+    Value: !Ref Dashboard
+  AlarmTopicArn:
+    Value: !Ref AlarmTopic
+  ConsumerLogGroupName:
+    Value: !Ref ConsumerLogGroup
+  ConsumerFunctionName:
+    Value: !Ref ConsumerFunction

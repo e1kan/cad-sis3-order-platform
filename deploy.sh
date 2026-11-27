@@ -7,6 +7,7 @@ set -euo pipefail
 APP_STACK="${1:-cad-sis3-app}"
 NET_STACK="${2:-cad-sis3-network}"
 DESIRED="${DESIRED:-2}"
+EXTRA=""; [ -n "${ALARM_EMAIL:-}" ] && EXTRA="AlarmEmail=$ALARM_EMAIL"   # optional: alarm notifications by email
 REGION="${AWS_REGION:-eu-central-1}"
 TAG="$(git rev-parse --short HEAD)"      # needs at least one git commit
 cd "$(dirname "$0")"
@@ -19,7 +20,7 @@ echo "== 2/4 app stack with 0 tasks (creates the ECR repository): $APP_STACK"
 aws cloudformation deploy --region "$REGION" --stack-name "$APP_STACK" \
   --template-file infra/app.yaml --capabilities CAPABILITY_IAM \
   --no-fail-on-empty-changeset \
-  --parameter-overrides NetworkStackName="$NET_STACK" ImageTag="$TAG" DesiredCount=0
+  --parameter-overrides NetworkStackName="$NET_STACK" ImageTag="$TAG" DesiredCount=0 $EXTRA
 
 echo "== 3/4 build and push image $TAG"
 REPO_URI="$(aws cloudformation describe-stacks --region "$REGION" --stack-name "$APP_STACK" \
@@ -40,7 +41,7 @@ echo "== 4/4 start $DESIRED tasks"
 aws cloudformation deploy --region "$REGION" --stack-name "$APP_STACK" \
   --template-file infra/app.yaml --capabilities CAPABILITY_IAM \
   --no-fail-on-empty-changeset \
-  --parameter-overrides NetworkStackName="$NET_STACK" ImageTag="$TAG" DesiredCount="$DESIRED"
+  --parameter-overrides NetworkStackName="$NET_STACK" ImageTag="$TAG" DesiredCount="$DESIRED" $EXTRA
 
 aws cloudformation describe-stacks --region "$REGION" --stack-name "$APP_STACK" \
   --query "Stacks[0].Outputs[?OutputKey=='AlbDnsName'].OutputValue" --output text

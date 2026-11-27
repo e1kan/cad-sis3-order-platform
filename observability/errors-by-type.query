@@ -1,0 +1,5 @@
+fields @timestamp, errorType
+| filter level = "ERROR"
+| stats count(*) as n by errorType
+| sort n desc
+| limit 20
